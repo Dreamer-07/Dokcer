@@ -735,7 +735,7 @@ docker run -d -p 3310:3306 -v /home/mysql/conf:/etc/mysql/conf.d -v /home/mysql/
    CMD /bin/bash
    ```
 
-2. 通过配置文件 **构建** 镜像：`docker build -f 配置文件 -t 镜像名:版本号`
+2. 通过配置文件 **构建** 镜像：`docker build -f 配置文件 -t 镜像名:版本号 .`
 
    ```shell
    [root@VM-0-11-centos home]# docker build -f ./Dockerfile -t prover/centos:1.0 .
@@ -815,5 +815,389 @@ test.java
 可以发现进行数据卷同步后，它们 Mounts 的信息是一致的
 
 ### DockerFile
+
+作用：构建 docker 镜像的配置文件
+
+构建步骤：
+
+1. 编写一个 `dockerfile` 文件
+2. docker build 构建成一个镜像
+3. docker run 启动镜像
+4. docker push 发布镜像(DockHub / 阿里云镜像仓库)
+
+#### 构建过程
+
+**基础知识：**
+
+1. 每个保留关键字(指令)都必须是大写的
+2. 执行顺序由上往下
+3. \# 表示注释
+4. 每一个指令都会提交一个镜像层，并提交
+
+![dockerfile](README.assets/1Hr5XPWMTgD2KKDFIES3_8Q.png)
+
+**构建过程：**
+
+1. 为我们的 Spring 项目创建一个 `dockerfile` 文件，并通过指令配置对应的环境
+2. 通过 dockerfile 构建我们的镜像 **DockerImages**，也是我们最终发布和运行的产品
+3. 运行镜像启动 Docker 容器
+
+#### 指令
+
+```shell
+FROM 		# 基础镜像
+MAINTAINER	# 镜像是谁写的(名字+邮箱)
+RUN 		# 镜像构建时需要运行的命令
+ADD			# 添加镜像
+WORKDIR		# 设置工作目录
+VOLUME		# 设置数据卷
+EXPOSE		# 配置端口
+CMD			# 指定这个容器启动时要运行的命令，只有最后一个会生效，可被替代
+ENTRYPOINT	# 指定这个容器启动时要运行的命令，可以追加命令
+ONBUILD		# 触发指令: 当构建一个被继承的 dockerfile 时就会运行 ONBUILD 指令
+COPY		# 类似于 ADD 将文件拷贝到镜像中
+ENV			# 构建的时候设置环境变量
+```
+
+![k8s记录-Dockerfile详解- 信方- 博客园](README.assets/631711-20191220153130957-348455400.png)
+
+#### 实战
+
+> 构建一个带有 `ifconfig` 和 `vim` 指令的 centos
+
+1. 创建 `dockerfile` 文件
+
+   ```dockerfile
+   FROM centos								# 设置基础镜像
+   MAINTAINER prover<2391105059@qq.com>	# 设置作者信息
+   
+   ENV MYPATH /usr/local					# 设置环境变量
+   
+   WORKDIR $MYPATH							# 设置默认工作路径
+   
+   RUN yum -y install vim					# 设置构建时需要执行的指令
+   RUN yum -y install net-tools
+   
+   EXPOSE 80								# 设置暴露端口
+   
+   CMD echo $MYPATH						# 输出
+   CMD echo "---end---"
+   CMD /bin/bash
+   ```
+
+2. 构建镜像 -> `docker build -f 配置文件 -t 镜像名:版本号 .`
+
+   ```shell
+   docker build -f ./dockerfile -t custom-centos:1.0 .
+   ```
+
+3. 构建成功，查看本地镜像
+
+   ```shell
+   Successfully built a09746f148ea
+   Successfully tagged custom-centos:1.0
+   [root@VM-0-11-centos ~]# docker images
+   REPOSITORY            TAG       IMAGE ID       CREATED          SIZE
+   custom-centos         1.0       a09746f148ea   23 seconds ago   323MB
+   ```
+
+4. 启动镜像
+
+   ```shell
+   [root@VM-0-11-centos ~]# docker run -it custom-centos:1.0 
+   [root@9f67acdcc439 local]# pwd
+   /usr/local
+   [root@9f67acdcc439 local]# ifconfig
+   eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+           inet 172.18.0.6  netmask 255.255.0.0  broadcast 172.18.255.255
+           ether 02:42:ac:12:00:06  txqueuelen 0  (Ethernet)
+           RX packets 7  bytes 586 (586.0 B)
+           RX errors 0  dropped 0  overruns 0  frame 0
+           TX packets 0  bytes 0 (0.0 B)
+           TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+   
+   lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+           inet 127.0.0.1  netmask 255.0.0.0
+           loop  txqueuelen 1000  (Local Loopback)
+           RX packets 0  bytes 0 (0.0 B)
+           RX errors 0  dropped 0  overruns 0  frame 0
+           TX packets 0  bytes 0 (0.0 B)
+           TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+   ```
+
+> 扩展：查看一个镜像的提交过程
+
+**docker history 镜像id**
+
+```shell
+[root@VM-0-11-centos ~]# docker history 605c77e624dd
+IMAGE          CREATED        CREATED BY                                      SIZE      COMMENT
+605c77e624dd   30 hours ago   /bin/sh -c #(nop)  CMD ["nginx" "-g" "daemon…   0B        
+<missing>      30 hours ago   /bin/sh -c #(nop)  STOPSIGNAL SIGQUIT           0B        
+<missing>      30 hours ago   /bin/sh -c #(nop)  EXPOSE 80                    0B        
+<missing>      30 hours ago   /bin/sh -c #(nop)  ENTRYPOINT ["/docker-entr…   0B        
+<missing>      30 hours ago   /bin/sh -c #(nop) COPY file:09a214a3e07c919a…   4.61kB    
+<missing>      30 hours ago   /bin/sh -c #(nop) COPY file:0fd5fca330dcd6a7…   1.04kB    
+<missing>      30 hours ago   /bin/sh -c #(nop) COPY file:0b866ff3fc1ef5b0…   1.96kB    
+<missing>      30 hours ago   /bin/sh -c #(nop) COPY file:65504f71f5855ca0…   1.2kB     
+<missing>      30 hours ago   /bin/sh -c set -x     && addgroup --system -…   61.1MB    
+<missing>      30 hours ago   /bin/sh -c #(nop)  ENV PKG_RELEASE=1~bullseye   0B        
+<missing>      30 hours ago   /bin/sh -c #(nop)  ENV NJS_VERSION=0.7.1        0B        
+<missing>      30 hours ago   /bin/sh -c #(nop)  ENV NGINX_VERSION=1.21.5     0B        
+<missing>      9 days ago     /bin/sh -c #(nop)  LABEL maintainer=NGINX Do…   0B        
+<missing>      10 days ago    /bin/sh -c #(nop)  CMD ["bash"]                 0B        
+<missing>      10 days ago    /bin/sh -c #(nop) ADD file:09675d11695f65c55…   80.4MB a
+```
+
+> 扩展：CMD 和 ENTRYPOINT 的区别
+
+CMD: 只有最后一条命令被执行，可能会被替代
+
+```shell
+# 创建配置文件
+[root@VM-0-11-centos ~]# vim docker-test-cmd
+[root@VM-0-11-centos ~]# cat docker-test-cmd 
+FROM centos
+CMD ["ls", "-a"]
+
+# 构建镜像
+[root@VM-0-11-centos ~]# docker build -f docker-test-cmd -t docker-test-cmd:1.0 .
+Sending build context to Docker daemon  2.924MB
+Step 1/2 : FROM centos
+ ---> 5d0da3dc9764
+Step 2/2 : CMD ["ls", "-a"]
+ ---> Running in a6d048080df4
+Removing intermediate container a6d048080df4
+ ---> 4c009e7c57db
+Successfully built 4c009e7c57db
+Successfully tagged docker-test-cmd:1.0
+
+# 启动镜像
+[root@VM-0-11-centos ~]# docker run -it 4c009e7c57db
+.   .dockerenv	dev  home  lib64       media  opt   root  sbin	sys  usr
+..  bin		etc  lib   lost+found  mnt    proc  run   srv	tmp  var
+
+# 由于 CMD 指令会被替代，所以在启动镜像的时候如果只指定 -l 就会导致配置的`ls -a`被替代，而 `-l` 本身不是指令，所以会报错
+[root@VM-0-11-centos ~]# docker run -it 4c009e7c57db -l
+docker: Error response from daemon: OCI runtime create failed: container_linux.go:380: starting container process caused: exec: "-l": executable file not found in $PATH: unknown.
+
+# 使用 ls -la 代替 ls -a
+[root@VM-0-11-centos ~]# docker run -it 4c009e7c57db ls -la
+total 56
+drwxr-xr-x   1 root root 4096 Dec 31 01:41 .
+drwxr-xr-x   1 root root 4096 Dec 31 01:41 ..
+-rwxr-xr-x   1 root root    0 Dec 31 01:41 .dockerenv
+lrwxrwxrwx   1 root root    7 Nov  3  2020 bin -> usr/bin
+drwxr-xr-x   5 root root  360 Dec 31 01:41 dev
+drwxr-xr-x   1 root root 4096 Dec 31 01:41 etc
+...
+```
+
+ENTRYPOINT: 支持追加命令
+
+```shell
+# 创建配置文件
+[root@VM-0-11-centos ~]# vim docker-test-entrypoint
+[root@VM-0-11-centos ~]# cat docker-test-entrypoint 
+FROM centos
+ENTRYPOINT ["ls", "-a"] 
+
+# 构建镜像
+[root@VM-0-11-centos ~]# docker build -f ./docker-test-entrypoint -t docker-test-entrypoint:1.0 .
+...
+Successfully built 4739a91f1a40
+Successfully tagged docker-test-entrypoint:1.0
+
+# 启动容器
+[root@VM-0-11-centos ~]# docker run -it docker-test-entrypoint:1.0 
+.   .dockerenv	dev  home  lib64       media  opt   root  sbin	sys  usr
+..  bin		etc  lib   lost+found  mnt    proc  run   srv	tmp  var
+# 可以直接上 `-l` 指令追加到 `ls -a` 后面
+[root@VM-0-11-centos ~]# docker run -it docker-test-entrypoint:1.0 -l
+total 56
+drwxr-xr-x  1 root root 4096 Dec 31 01:48 .
+drwxr-xr-x  1 root root 4096 Dec 31 01:48 ..
+-rwxr-xr-x  1 root root    0 Dec 31 01:48 .dockerenv
+lrwxrwxrwx  1 root root    7 Nov  3  2020 bin -> usr/bin
+drwxr-xr-x  5 root root  360 Dec 31 01:48 dev
+drwxr-xr-x  1 root root 4096 Dec 31 01:48 etc
+drwxr-xr-x  2 root root 4096 Nov  3  2020 home
+...
+```
+
+#### 构建 Tomcat 镜像
+
+1. 准备环境 `readme.md` `apache-tomcat-9.0.56.tar.gz` `jdk-8u311-linux-x64.tar.gz`
+
+   ![image-20211231111054077](README.assets/image-20211231111054077.png)
+
+2. 创建 `Dockerfile` 文件
+
+   ```dockerfile
+   FROM centos
+   MAINTAINER prover<2391105059@qq.com>
+   
+   # 复制文件到容器内
+   COPY readme.md /usr/local/readme.md
+   
+   # 添加文件镜像
+   ADD jdk-8u311-linux-x64.tar.gz /usr/local/
+   ADD apache-tomcat-9.0.56.tar.gz /usr/local/
+   
+   RUN yum -y install vim
+   
+   ENV MYPATH /usr/local
+   WORKDIR $MYPATH
+   
+   # 设置 jdk 和 tomcat 环境变量
+   ENV JAVA_HOME /usr/local/jdk1.8.0_311
+   ENV CLASSPATH $JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar
+   ENV CATALINA_HOME /usr/local/apache-tomcat-9.0.56
+   ENV CATALINA_BASH /usr/local/apache-tomcat-9.0.56
+   ENV PATH $PATH:$JAVA_HOME/bin:$CATALINA_HOME/lib:$CATALINA_HOME/bin
+   
+   # 开发端口
+   EXPOSE 8080
+   
+   # 启动容器后立即启动 tomcat
+   CMD /usr/local/apache-tomcat-9.0.56/bin/startup.sh && tail -F /url/local/apache-tomcat-9.0.56/bin/logs/catalina.out
+   ```
+
+3. 构建镜像, 如果不指定 `-f 文件名`默认找的就是当前目录下的 **Dockerfile** 文件
+
+   ```shell
+   docker build -t my-tomcat .
+   ```
+
+4. 启动容器，通过 -v 挂载数据卷
+
+   ```shell
+   docker run -d -p 9090:8080 --name provertomcat \ 
+   -v /home/prover/build/tomcat/test:/usr/local/apache-tomcat-9.0.56/webapps/test \ 
+   -v /home/prover/build/tomcat/tomcatlogs:/usr/local/apache-tomcat-9.0.56/logs \ 
+   my-tomcat:1.0 
+   ```
+
+5. 可以访问 9090 端口试试，然后进入到 `/home/prover/build/tomcat/test` 目录
+
+   创建 **WEB-INF** 文件夹并配置 `web.xml`
+
+   ```xml
+   mkdir WEB-INF
+   cd WEB-INF
+   touch web.xml
+   
+   vim web.xml
+   <web-app version="2.4" 
+       xmlns="http://java.sun.com/xml/ns/j2ee" 
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee 
+           http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd">
+           
+   </web-app>
+   ```
+
+   在 `test` 目录下创建 index.jsp
+
+   ```jsp
+   <%@ page language="java" contentType="text/html; charset=UTF-8"
+       pageEncoding="UTF-8"%>
+   <!DOCTYPE html>
+   <html>
+       <head>
+           <meta charset="utf-8">
+           <title>hello. xiaofan</title>
+       </head>
+       <body>
+           Hello World!<br/>
+           <%
+           System.out.println("-----prover test web logs------");
+           %>
+       </body>
+   </html>
+   ```
+
+6. 访问 ip:9090/test
+
+   ![image-20211231111913890](README.assets/image-20211231111913890.png)
+
+7. 查看日志输出
+
+   ```shell
+   # 进入到挂载的日志文件夹
+   [root@VM-0-11-centos test]# cd ../tomcatlogs/
+   
+   # 查看 catalina.out 文件
+   [root@VM-0-11-centos tomcatlogs]# cat catalina.out
+   ...
+   31-Dec-2021 02:55:32.538 INFO [Catalina-utility-1] org.apache.catalina.core.StandardContext.reload Reloading Context with name [/test] is completed
+   -----prover test web logs------
+   ```
+
+#### 发布镜像
+
+> 发布到 DockerHub
+
+```shell
+# 先登录到 Dockerhub(哦，记得先注册，混蛋)
+[root@VM-0-11-centos tomcatlogs]# docker login -u prover07
+# 输入密码
+Password: 
+WARNING! Your password will be stored unencrypted in /root/.docker/config.json.
+Configure a credential helper to remove this warning. See
+https://docs.docker.com/engine/reference/commandline/login/#credentials-store
+
+Login Succeeded
+
+# 修改镜像名
+[root@VM-0-11-centos tomcatlogs]# docker tag 20ed4f4dee0c prover07/my-tomcat:1.0
+
+# 发布镜像(也是分层发布的)
+[root@VM-0-11-centos tomcatlogs]# docker push prover07/my-tomcat:1.0 
+The push refers to repository [docker.io/prover07/my-tomcat]
+94fadfd7ccea: Pushing [>                                                  ]  546.3kB/64.73MB
+af14137f2624: Pushing [=>                                                 ]  522.8kB/16.06MB
+ce1b0d9d2d74: Pushing [>                                                  ]   1.08MB/365.3MB
+8828b567f3d7: Pushing [==================================================>]  3.072kB
+```
+
+> 发布到阿里云镜像仓库
+
+1. 登录阿里云
+
+2. 找到容器镜像服务
+
+   ![image-20211231134232047](README.assets/image-20211231134232047.png)
+
+3. 创建命名空间
+
+   ![image-20211231134316296](README.assets/image-20211231134316296.png)
+
+4. 创建仓库
+
+   ![image-20211231134350307](README.assets/image-20211231134350307.png)
+
+   ![image-20211231134415558](README.assets/image-20211231134415558.png)
+
+5. 在本地通过 docker 登录阿里云镜像服务
+
+   ```shell
+   # 注意：密码是刚刚创建个人实例时配置的
+   [root@VM-0-11-centos ~]# docker login --username=巴御前天下第一 registry.cn-hangzhou.aliyuncs.com
+   Password: 
+   
+   # 将镜像重命名
+   [root@VM-0-11-centos ~]# docker tag 580c0e4e98b0 registry.cn-hangzhou.aliyuncs.com/docke-study/tomcat02:1.0
+   # 推送指定镜像
+   [root@VM-0-11-centos ~]# docker push registry.cn-hangzhou.aliyuncs.com/docke-study/tomcat02:1.0 
+   The push refers to repository [registry.cn-hangzhou.aliyuncs.com/docke-study/tomcat02]
+   658693958bcb: Pushing [=>                                                 ]  1.639MB/78.87MB
+   11bdf2a940a7: Pushing  1.536kB
+   8dfce63a7397: Pushing [==================================================>]  217.6kB
+   ```
+
+6. 也可以在阿里云控制台查看
+
+   ![image-20211231135438816](README.assets/image-20211231135438816.png)
 
 ### Docker 网络
