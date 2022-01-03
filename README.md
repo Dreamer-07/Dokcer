@@ -1201,3 +1201,375 @@ ce1b0d9d2d74: Pushing [>                                                  ]   1.
    ![image-20211231135438816](README.assets/image-20211231135438816.png)
 
 ### Docker 网络
+
+#### 理解 Docker0
+
+> 观察服务器的网卡配置
+
+![image-20220103105805706](README.assets/image-20220103105805706.png)
+
+> 问题：宿主机能否 ping 通 docker 容器
+
+```shell
+apt update && apt install -y iproute2
+
+# 启动一个 tomcat docker 容器
+docker run -d -P --name tomcat01 tomcat
+
+# 安装网络工具
+docker exec -it tomcat01 /bin/bash
+
+
+# 查看容器网络信息
+[root@VM-0-11-centos ~]# docker exec -it tomcat01 ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+16: eth0@if17: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:ac:12:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.18.0.2/16 brd 172.18.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+
+# 使用宿主机 ping docker 容器
+[root@VM-0-11-centos ~]# ping 172.18.0.2
+PING 172.18.0.2 (172.18.0.2) 56(84) bytes of data.
+64 bytes from 172.18.0.2: icmp_seq=1 ttl=64 time=0.046 ms
+64 bytes from 172.18.0.2: icmp_seq=2 ttl=64 time=0.045 ms
+```
+
+总结：安装了 docker 的宿主机可以与 docker 容器互通
+
+原理：
+
+1. 处于同一个网段下(TODO: 计算机网络)
+
+2. 当我们在宿主机上安装了 docker 容器后，就会有一个新网卡 docker0(使用桥接模式)；而当我们每启动一个 docker 容器，docker 就会给它分配一个新网卡，而这里的容器网卡就会使用 **veth-pair** 技术
+
+   当我们启动一个新容器后，可以在宿主机上使用 `ip addr` 进行测试
+
+   ![image-20220103111933675](README.assets/image-20220103111933675.png)
+
+3. **evth-pair:**
+
+   - 是一对的虚拟设备接口，都是成对出现，一端连接着协议，一端彼此相连
+   - 通常用于连接各种虚拟网络设备
+
+> 问题：容器1能否 ping 通容器2
+
+```shell
+# 安装 ping 工具
+[root@VM-0-11-centos ~]# docker exec -it tomcat02 apt-get update && apt-get install inetutils-ping
+	
+# 测试能否 ping 通另一个容器
+[root@VM-0-11-centos ~]# docker exec -it tomcat02 ping 172.18.0.2
+PING 172.18.0.2 (172.18.0.2): 56 data bytes
+64 bytes from 172.18.0.2: icmp_seq=0 ttl=64 time=0.089 ms
+64 bytes from 172.18.0.2: icmp_seq=1 ttl=64 time=0.068 ms
+```
+
+总结：可以
+
+原理：在启动容器不通过 `-net` 指定网络时，默认使用的都是 docker0 进行路由的，docker 会给我们的容器默认分配一个可用的 ip
+
+![image-20220103113203646](README.assets/image-20220103113203646.png)
+
+> 总结
+
+Docker 容器间的网络连接使用的是 Linux 的 **桥接模式**(veth-pair 技术)，而 docker0 就是宿主机中 Docker 容器间的一个网桥
+
+![image-20220103113735754](README.assets/image-20220103113735754.png)
+
+核心：使用 Linux 的虚拟化网络技术，在我们的容器内和 docker0分别创建了一个虚拟网卡，通过 veth-pair 进行一个连接 
+
+> 存在问题：能否实现高可用 - 当我们通过 docker 部署开发环境(mysql/redis等)时由于 docker0 每次分配的 ip 可能不同，所以能否通过我们的容器名来连接环境，而不是通过 ip 地址
+>
+> **解决方案：容器互联**
+
+#### --link
+
+> 少用
+
+作用：通过容器名访问容器，而不是通过 ip 地址
+
+实践：
+
+```shell
+# 在启动容器时配置
+docker run -d -P --name tomcat03 --link tomcat02 tomcat
+
+# 测试能否ping通 -> 注意这里 t3 可以访问 t2，但 t2 不能访问 t3
+[root@VM-0-11-centos ~]# docker exec -it tomcat03 ping tomcat02
+PING tomcat02 (172.18.0.2): 56 data bytes
+64 bytes from 172.18.0.2: icmp_seq=0 ttl=64 time=0.116 ms
+64 bytes from 172.18.0.2: icmp_seq=1 ttl=64 time=0.078 ms
+```
+
+总结：在启动时进行相关配置后就可以通过容器名访问对应的容器
+
+原理：通过配置 hosts 文件实现
+
+```shell
+# 查看 t3 的 hosts 文件
+[root@VM-0-11-centos ~]# docker exec -it tomcat03 cat /etc/hosts
+127.0.0.1	localhost
+::1	localhost ip6-localhost ip6-loopback
+fe00::0	ip6-localnet
+ff00::0	ip6-mcastprefix
+ff02::1	ip6-allnodes
+ff02::2	ip6-allrouters
+172.18.0.2	tomcat02 88958bdc767c
+172.18.0.3	9dd28d3913e0
+```
+
+#### 自定义网络
+
+> 查看所有的 docker 网络
+
+![image-20220103121459030](README.assets/image-20220103121459030.png)
+
+网络模式：
+
+- bridge：桥接模式(默认)
+- none：不配置网络
+- host：主机模式，和宿主机共享网络
+- container：容器内网络联通(用的少，局限性很大)
+
+使用：
+
+```shell
+# 默认情况下使用的是 bridge 网络模式(下面两条命令相同)
+docker run -d -P --name tomcat01 --net bridge tomcat
+docker run -d -P --name tomcat01 tomcat
+
+# 创建自定义网络
+# driver：使用的模式
+# subnet：子网地址
+# gateway：网关地址
+[root@VM-0-11-centos ~]# docker network create --driver bridge --subnet 192.168.0.0/16 --gateway 192.168.0.1 mynet
+b365cfa26f1ea4be5258be7bffee32fe6a713883a1a2b797c2e046b939154f1d
+
+# 查看网络的详细配置
+[root@VM-0-11-centos ~]# docker network ls
+NETWORK ID     NAME      DRIVER    SCOPE
+0ab301a664d0   bridge    bridge    local
+7c6476cbcca0   host      host      local
+b365cfa26f1e   mynet     bridge    local
+30d6499d9857   none      null      local
+[root@VM-0-11-centos ~]# docker network inspect b365cfa26f1e
+[
+    {
+        "Name": "mynet",
+        "Id": "b365cfa26f1ea4be5258be7bffee32fe6a713883a1a2b797c2e046b939154f1d",
+        "Created": "2022-01-03T20:28:40.917898518+08:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": {},
+            "Config": [
+                {
+                    "Subnet": "192.168.0.0/16",
+                    "Gateway": "192.168.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {},
+        "Options": {},
+        "Labels": {}
+    }
+]
+
+# 启动容器时指定网络
+[root@VM-0-11-centos ~]# docker run -d -P --name tomcat01 --net mynet tomcat
+e0192fc0812301bbb77971475149343e99fc31567add4b63aa474c5e09849ec0
+[root@VM-0-11-centos ~]# docker run -d -P --name tomcat02 --net mynet tomcat
+d404ab4c20c2c72e2bfa079e7d83acba7edbd7d8b008304e60ecf14e543d7733
+
+# 查看使用该网络的容器
+[root@VM-0-11-centos ~]# docker network inspect b365cfa26f1e
+[
+    {
+        "Name": "mynet",
+        "Id": "b365cfa26f1ea4be5258be7bffee32fe6a713883a1a2b797c2e046b939154f1d",
+        "Created": "2022-01-03T20:28:40.917898518+08:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": {},
+            "Config": [
+                {
+                    "Subnet": "192.168.0.0/16",
+                    "Gateway": "192.168.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        ### 可以在这里查看使用给网络的容器以及相关的网络信息
+        "Containers": {
+            "d404ab4c20c2c72e2bfa079e7d83acba7edbd7d8b008304e60ecf14e543d7733": {
+                "Name": "tomcat02",
+                "EndpointID": "1761d9d8ae6de80f486b727ed2e93b5a258c069b3bae3400f650f58982e04bf7",
+                "MacAddress": "02:42:c0:a8:00:03",
+                "IPv4Address": "192.168.0.3/16",
+                "IPv6Address": ""
+            },
+            "e0192fc0812301bbb77971475149343e99fc31567add4b63aa474c5e09849ec0": {
+                "Name": "tomcat01",
+                "EndpointID": "4834cae7627464f1a1a2b88f81d219dc7a70f1d272d14fa05ba28c7175faef76",
+                "MacAddress": "02:42:c0:a8:00:02",
+                "IPv4Address": "192.168.0.2/16",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {},
+        "Labels": {}
+    }
+]
+
+# 测试能否 ping 通
+[root@VM-0-11-centos ~]# docker exec -it tomcat01 ping tomcat02
+PING tomcat02 (192.168.0.3): 56 data bytes
+64 bytes from 192.168.0.3: icmp_seq=0 ttl=64 time=0.101 ms
+64 bytes from 192.168.0.3: icmp_seq=1 ttl=64 time=0.067 ms
+64 bytes from 192.168.0.3: icmp_seq=2 ttl=64 time=0.074 ms
+```
+
+总结：自定义的 docker 网络会自动帮我们维护好对应的关系，同时也推荐平时我们这样去使用 docker 网络
+
+好处：对于不同的生成环境配置(redis/mysql/等)如果要部署集群，就可以使用这种模式，通过**创建不同自定义网络来使其分配在不同的子网下**，实现**集群健康** - 对于跨集群网络的访问解决方案: **网络连通**
+
+#### 网络连通
+
+作用：实现 docker 内部跨网络的容器访问
+
+实现：、
+
+```shell
+# 默认情况下，跨网络的容器无法访问
+[root@VM-0-11-centos ~]# clear
+[root@VM-0-11-centos ~]# docker exec -it tomcat01 ping tomcat-default-01 
+ping: unknown host
+
+# 实现网络连通
+# 通过 docker network connect [网络名] [容器名]
+[root@VM-0-11-centos ~]# docker network connect mynet tomcat-default-01 
+# 查看网络详细配置
+[root@VM-0-11-centos ~]# docker network inspect mynet 
+[
+    {
+        "Name": "mynet",
+        ...
+        "Containers": {
+            "733374d2a43fa74feff6e71c6f88d111aa4f4d6e475c7681e6e969ac0f03f16d": {
+                "Name": "tomcat-default-01",
+                "EndpointID": "d6dc5737f6581f52629908d1c59a506f38532b3ec377fe7d23b4f6eb9ca52195",
+                "MacAddress": "02:42:c0:a8:00:04",
+                "IPv4Address": "192.168.0.4/16",
+                "IPv6Address": ""
+            },
+            "d404ab4c20c2c72e2bfa079e7d83acba7edbd7d8b008304e60ecf14e543d7733": {
+                "Name": "tomcat02",
+                "EndpointID": "1761d9d8ae6de80f486b727ed2e93b5a258c069b3bae3400f650f58982e04bf7",
+                "MacAddress": "02:42:c0:a8:00:03",
+                "IPv4Address": "192.168.0.3/16",
+                "IPv6Address": ""
+            },
+            "e0192fc0812301bbb77971475149343e99fc31567add4b63aa474c5e09849ec0": {
+                "Name": "tomcat01",
+                "EndpointID": "4834cae7627464f1a1a2b88f81d219dc7a70f1d272d14fa05ba28c7175faef76",
+                "MacAddress": "02:42:c0:a8:00:02",
+                "IPv4Address": "192.168.0.2/16",
+                "IPv6Address": ""
+            }
+        },
+        ...
+    }
+]
+```
+
+原理：观察 `docker network inspect `可以发现，它就是**额外为容器分配了一个 ip 地址**，类似于一个宿主机可以配置多个网络，这样 `tomcat-default-01` 和这个网络下的两个容器都可以互相访问
+
+```shell
+[root@VM-0-11-centos ~]# docker exec -it tomcat01 ping tomcat-default-01 
+PING tomcat-default-01 (192.168.0.4): 56 data bytes
+64 bytes from 192.168.0.4: icmp_seq=0 ttl=64 time=0.088 ms
+64 bytes from 192.168.0.4: icmp_seq=1 ttl=64 time=0.078 ms
+```
+
+![image-20220103210322605](README.assets/image-20220103210322605.png)
+
+####  实战：部署 redis 集群
+
+![image-20220103210450967](README.assets/image-20220103210450967.png)
+
+```shell
+# 创建网络配置
+docker network create my-redis --subnet 172.88.0.0/16
+
+# 通过脚本快速创建 redis 配置文件
+for port in $(seq 1 6); \
+do \ 
+mkdir -p /mydata/redis/node-${port}/conf 
+touch /mydata/redis/node-${port}/conf/redis.conf
+cat << EOF >/mydata/redis/node-${port}/conf/redis.conf
+port 6379
+bind 0.0.0.0
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 5000
+cluster-announce-ip 172.88.0.1${port}
+cluster-announce-port 6379
+cluster-announce-bus-port 16379
+appendonly yes
+EOF
+done
+
+# 依次通过 redis 启动6个节点
+docker run -p 6371:6379 -p 16371:16379 --name redis-1 -v /mydata/redis/node-1/data:/data -v /mydata/redis/node-1/conf/redis.conf:/etc/redis/redis.conf -d --net my-redis --ip 172.88.0.11 redis:5.0.9-alpine3.11 redis-server /etc/redis/redis.conf;
+
+docker run -p 6372:6379 -p 16372:16379 --name redis-2 -v /mydata/redis/node-2/data:/data -v /mydata/redis/node-2/conf/redis.conf:/etc/redis/redis.conf -d --net my-redis --ip 172.88.0.12 redis:5.0.9-alpine3.11 redis-server /etc/redis/redis.conf;
+
+...
+
+# 进入到容器内部
+[root@VM-0-11-centos conf]# docker exec -it redis-1 /bin/sh
+# 开启 redis 集群
+/data # redis-cli --cluster create 172.88.0.11:6379 172.88.0.12:6379 172.88.0.13:6379 172.88.0.14:6379 172.88.0.15:6379 172.88.0.16:6379 --cluster-replicas 1
+
+# 连接到 redis 集群
+/data # redis-cli -c
+# 查看集群信息
+127.0.0.1:6379> cluster info
+# 查看集群节点信息
+127.0.0.1:6379> cluster nodes
+df79bf4c2c142e02cd035dc8d9b7aa879c4b6182 172.88.0.14:6379@16379 slave 9cd8aee678b4f13e3f0268905c395c157e5268a7 0 1641219032582 4 connected
+b154cf28f6022cccefd9a9008316ae2711e09008 172.88.0.15:6379@16379 slave 0e94af48ba84cecdb6d9f5483c983bdf7f39535f 0 1641219031000 5 connected
+9cd8aee678b4f13e3f0268905c395c157e5268a7 172.88.0.13:6379@16379 master - 0 1641219032000 3 connected 10923-16383
+81b12cef716b7d7219b64c675d509d9451668f00 172.88.0.16:6379@16379 slave 1c4dc23b6962fe5962127859deee99a75d8c19e4 0 1641219032000 6 connected
+1c4dc23b6962fe5962127859deee99a75d8c19e4 172.88.0.12:6379@16379 master - 0 1641219030579 2 connected 5461-10922
+0e94af48ba84cecdb6d9f5483c983bdf7f39535f 172.88.0.11:6379@16379 myself,master - 0 1641219029000 1 connected 0-5460
+
+# 可以测试下存储数据然后通过 docker 关闭对于的节点再进行获取
+```
+
+### SpringBoot 打包 Docker 镜像
+
+
+
