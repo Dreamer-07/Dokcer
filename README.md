@@ -4,13 +4,11 @@
 
 ### 概述
 
-官网：https://www.docker.com/  
+官网：https://www.docker.com/
 
 文档：https://docs.docker.com/
 
-Docker Hub: https://hub.docker.com/ 
-
-
+Docker Hub: https://hub.docker.com/
 
 项目的需要经过**开发 -- 上线**两个阶段，一般是需要配置两套环境的
 
@@ -18,7 +16,7 @@ Docker Hub: https://hub.docker.com/
 
 使用 **Docker** 后：开发人员打包部署上线，一套流程做完
 
-关键点：**Docker 镜像机制**，允许打包项目时**带上环境**放到 Docker 仓库上，当需要部署上线时，直接运行即可 
+关键点：**Docker 镜像机制**，允许打包项目时**带上环境**放到 Docker 仓库上，当需要部署上线时，直接运行即可
 
 > java -> apk -> 发布到应用商店 -> 用户下载使用
 >
@@ -26,7 +24,7 @@ Docker Hub: https://hub.docker.com/
 
 核心思想：**隔离** 一个项目一套环境，打包装箱，每个箱子之间是互相隔离的
 
- 
+
 
 > 与 vm 比较
 
@@ -66,7 +64,7 @@ docker: 隔离, **容器化技术并不会模拟一个完整的操作系统**，
 
 #### Docker 安装
 
-> Linux 环境准备 
+> Linux 环境准备
 
 ```shell
 # 查看 linux 内核版本，确保在 3.10 以上
@@ -176,7 +174,8 @@ DockerServer 接收到 Docker-Client 的指令，就会执行命令
 
 > Docker 比 vm 快的原因
 
-1. Docker 有比虚拟机更少的抽象层(不需要重新构建操作系统内核，而是直接使用宿主机的系统内核)，不需要通过 `Hypervisor` 实现硬件虚拟化，运行在 Docker 容器上的程序直接使用的都是实际物理机的硬件资源，所以 Docker 在 cpu 和内存利用率上更有效率
+1. Docker 有比虚拟机更少的抽象层(不需要重新构建操作系统内核，而是直接使用宿主机的系统内核)，不需要通过 `Hypervisor` 实现硬件虚拟化，运行在 Docker 容器上的程序直接使用的都是实际物理机的硬件资源，所以
+   Docker 在 cpu 和内存利用率上更有效率
 
 2. Docker 利用的是宿主机的内核，而 vm 需要重新构建一个操作系统内核(Guest OS)
 
@@ -514,7 +513,7 @@ docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=
 }
 ```
 
-扩展：**docker stats 容器id** 查看一个容器的运行情况 
+扩展：**docker stats 容器id** 查看一个容器的运行情况
 
 ![image-20211230145703653](README.assets/image-20211230145703653.png)
 
@@ -569,11 +568,13 @@ docker 的镜像实际上由一层一层的文件系统组成，也就是 **Unio
 
 ![image-20211230155208177](README.assets/image-20211230155208177.png)
 
-docker 镜像的最底层就是 **bootfs**，这一层与典型的 Linux/Unix 系统一样，包含 boot 加载器和内核，当 boot 加载完成之后整个内核就都在内存中，此时内存的使用权就有 bootfs 转交给内核，系统也会卸载 bootfs
+docker 镜像的最底层就是 **bootfs**，这一层与典型的 Linux/Unix 系统一样，包含 boot 加载器和内核，当 boot 加载完成之后整个内核就都在内存中，此时内存的使用权就有 bootfs 转交给内核，系统也会卸载
+bootfs
 
 rootfs，在 bootfs 之上，可以理解成不同 Linux 系统的发行版，例如 Ubuntu、Centos 等等
 
-对于 Docker 镜像来说，因为底层可以使用 Host 的 **Kernel**(内核)，只需要提供 rootfs 即可(Linux 发行版同理，对于不同的发行版，boofts 基本是一致的，而 rootfs 会有差别，因此不同的发行版可以公用 boofts)
+对于 Docker 镜像来说，因为底层可以使用 Host 的 **Kernel**(内核)，只需要提供 rootfs 即可(Linux 发行版同理，对于不同的发行版，boofts 基本是一致的，而 rootfs
+会有差别，因此不同的发行版可以公用 boofts)
 
 #### 分层理解
 
@@ -1252,8 +1253,8 @@ PING 172.18.0.2 (172.18.0.2) 56(84) bytes of data.
 
 3. **evth-pair:**
 
-   - 是一对的虚拟设备接口，都是成对出现，一端连接着协议，一端彼此相连
-   - 通常用于连接各种虚拟网络设备
+    - 是一对的虚拟设备接口，都是成对出现，一端连接着协议，一端彼此相连
+    - 通常用于连接各种虚拟网络设备
 
 > 问题：容器1能否 ping 通容器2
 
@@ -1280,7 +1281,7 @@ Docker 容器间的网络连接使用的是 Linux 的 **桥接模式**(veth-pair
 
 ![image-20220103113735754](README.assets/image-20220103113735754.png)
 
-核心：使用 Linux 的虚拟化网络技术，在我们的容器内和 docker0分别创建了一个虚拟网卡，通过 veth-pair 进行一个连接 
+核心：使用 Linux 的虚拟化网络技术，在我们的容器内和 docker0分别创建了一个虚拟网卡，通过 veth-pair 进行一个连接
 
 > 存在问题：能否实现高可用 - 当我们通过 docker 部署开发环境(mysql/redis等)时由于 docker0 每次分配的 ip 可能不同，所以能否通过我们的容器名来连接环境，而不是通过 ip 地址
 >
@@ -1515,7 +1516,7 @@ PING tomcat-default-01 (192.168.0.4): 56 data bytes
 
 ![image-20220103210322605](README.assets/image-20220103210322605.png)
 
-####  实战：部署 redis 集群
+#### 实战：部署 redis 集群
 
 ![image-20220103210450967](README.assets/image-20220103210450967.png)
 
@@ -1570,6 +1571,76 @@ b154cf28f6022cccefd9a9008316ae2711e09008 172.88.0.15:6379@16379 slave 0e94af48ba
 ```
 
 ### SpringBoot 打包 Docker 镜像
+
+1. 编写应用 - 使用 SpringBoot 编写一个 Hello World 的小程序即可
+
+2. 打包应用
+
+   ![image-20220104085906981](README.assets/image-20220104085906981.png)
+
+   打包后的 jar 包可以在 `target` 目录下搞定，保险起见可以通过 `java -jar` 的命令运行下程序，避免出错
+
+3. 编写  **Dockerfile**
+
+   先去为 IDEA 安装一个插件：
+
+   ![image-20220104090216195](README.assets/image-20220104090216195.png)
+
+   然后就可以在项目根目录下创建 Dockerfile 文件
+
+   ```dockerfile
+   # 指定基础镜像
+   FROM java:8
+   
+   # 拷贝 jar 包到容器内
+   COPY *.jar /app.jar
+   
+   # 指定运行参数
+   CMD ["--server.port=8080"]
+   
+   # 暴露端口
+   EXPOSE 8080
+   
+   # 指定启动时调用的命令
+   ENTRYPOINT ["java","-jar","/app.jar"]
+   ```
+
+4. 构建镜像
+
+   在服务器上创建文件夹后，将 Dockerfile 和对于的 jar 包放到文件夹下
+
+   ![image-20220104090934687](README.assets/image-20220104090934687.png)
+
+   ```shell
+   docker build -t springboot-web-hello .
+   ```
+
+5. 发布运行
+
+   ```shell
+   # 查看本地镜像
+   [root@VM-0-11-centos springboot-web]# docker images
+   REPOSITORY             TAG                IMAGE ID       CREATED          SIZE
+   springboot-web-hello   latest             5046b802e88f   41 seconds ago   660MB
+   tomcat                 latest             fb5657adc892   12 days ago      680MB
+   redis                  5.0.9-alpine3.11   3661c84ee9d0   20 months ago    29.8MB
+   java                   8                  d23bdf5b1b1b   4 years ago      643MB
+   
+   # 运行容器
+   [root@VM-0-11-centos springboot-web]# docker run -d -P --name web01 springboot-web-hello
+   47c0223457b8de6ddef3676116e53178adeb49105171e6b6e9dc2ff365b1d466
+   
+   # 查看端口
+   [root@VM-0-11-centos springboot-web]# docker ps
+   CONTAINER ID   IMAGE                  COMMAND                  CREATED         STATUS         PORTS                                         NAMES
+   47c0223457b8   springboot-web-hello   "java -jar /app.jar …"   5 seconds ago   Up 4 seconds   0.0.0.0:49162->8080/tcp, :::49162->8080/tcp   web01
+   
+   # 发送请求
+   [root@VM-0-11-centos springboot-web]# curl localhost:49162/hello
+   hello world
+   ```
+
+   
 
 
 
