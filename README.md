@@ -1941,5 +1941,135 @@ networks:
    test docker compose:2
    ```
 
-   
+## Docker Swarm
+
+### 安装
+
+使用 XShell 连接三台服务器，并勾选[发送键输入到所有会话]
+
+![image-20220104155402724](README.assets/image-20220104155402724.png)
+
+安装 gcc 相关环境
+
+```shell
+yum -y install gcc
+yum -y install gcc-c++
+```
+
+和 Docker 安装步骤一致即可
+
+
+
+### 工作模式
+
+节点：**管理节点和工作节点**
+
+![image-20220104153553130](README.assets/image-20220104153553130.png)
+
+特点：
+
+- 管理节点间可以互相通信
+- 管理节点可以控制工作节点，但工作节点不能控制管理节点
+- 所有的操作都集中在管理节点上
+
+### 创建 swarm 集群
+
+1. 初始化管理节点
+
+   注意: `--advertise-addr` 配置的是自己服务器的公网地址
+
+   ```shell
+   docker swarm init --advertise-addr 10.190.12.145
+   ```
+
+2. 获取令牌
+
+   ```shell
+   # 获取工作节点令牌
+   docker swarm join-token worker
+   # 获取管理节点令牌
+   docker swarm join-token manager
+   ```
+
+   获得令牌后通过 `docker swarm join` 可以以指定身份(工作/管理节点)加入到集群上
+
+3. [管理节点才可以] 查看集群的节点信息 -> `docker node ls`
+
+   ![image-20220104185142144](README.assets/image-20220104185142144.png)
+
+### Raft 协议
+
+作用：保证高可用，只有当**管理节点大于 1 台**时对于的集群才能生效，否则无法生效
+
+分布式基础补充：TODO
+
+### 使用
+
+好处：**弹性，扩缩容，集群**
+
+相关概念：
+
+- 对比 `docker-compose`: dc 也只是在单机模式下用的，而集群则需要使用 docker-swarm / k8s
+
+- 而对于一个 `dokcer-compose` 启动的项目在 `docker-swarm` 中就是一个 **service**
+
+- 从 容器 -> 服务(为多个相同容器搭建集群，同一对外暴露，屏蔽底层差异)，而这里的容器也可以称为 **副本**
+
+命令：
+
+1. **docker service create** 创建一个服务
+
+   ```shell
+   # 其实和 docker run 一样耍就好了，区别在于 docker run 只是启动一个容器，无法动态扩缩容
+   [root@i-uf7aubjg ~]# docker service create -p 8888:80 --name my-nginx nginx
+   ```
+
+2. **docker service ps 服务名** 查看一个服务中的副本
+
+   ```shell
+   [root@i-uf7aubjg ~]# docker service ps my-nginx
+   ID             NAME         IMAGE          NODE         DESIRED STATE   CURRENT STATE           ERROR     PORTS
+   ywpu0husi0vh   my-nginx.1   nginx:latest   i-uf7aubjg   Running         Running 2 minutes ago
+   ```
+
+   也可以用 `docker ps` 查看正在本地运行的容器
+
+3. **docker service ls** 查看所有的服务 
+
+   ```shell
+   ID             NAME       MODE         REPLICAS   IMAGE          PORTS
+   j8un1h8okhn0   my-nginx   replicated   1/1        nginx:latest   *:8888->80/tcp
+   ```
+
+4. **docker service update --replicas [服务副本数量] 服务名** 动态扩缩容
+
+   ```shell
+   docker service update --replicas 3 my-nginx
+   ```
+
+   可以查看 dokcer swarm 其他节点的容器运行状况
+
+   **docker service scale 服务名=服务副本数量**
+
+   ```shell
+   [root@i-uf7aubjg ~]# docker service scale my-nginx=2
+   ```
+
+   **测试：**通过 `docker ps`查看哪个节点上没有启动容器，然后就访问那个节点的对应服务，依然可以访问
+
+   ![image-20220104194751192](README.assets/image-20220104194751192.png)
+
+5. **docker service rm 服务名** 删除一个服务
+
+### 概念总结
+
+swarm: 集群的管理和编排
+
+node：一个 docker 节点，多个节点就组成了一个网络集群
+
+service: 任务，可以在管理节点/工作节点上运行
+
+task：任务细节 
+
+![image-20220104200926731](README.assets/image-20220104200926731.png) 
 
