@@ -1,0 +1,11 @@
+version: "3.3"
+services:
+   webapp:
+     build: .
+     image: webapp-image
+     depends_on:
+       - redis
+     ports:
+       - "8080:8080"
+   redis:
+     image: 'redis:alpine'

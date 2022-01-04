@@ -1640,7 +1640,306 @@ b154cf28f6022cccefd9a9008316ae2711e09008 172.88.0.15:6379@16379 slave 0e94af48ba
    hello world
    ```
 
+## Docker Compose 
+
+### 简介
+
+> 对于微服务应用，如果使用 Docker ，按照之前学习的方法，只能一个一个启动，效率过低
+>
+> 而 **Docer Compose** 就是为此诞生的，它可以轻松高效的管理，定义，运行多个容器
+
+官方文档：https://docs.docker.com/compose/
+
+作用：实现容器编排
+
+两个概念：服务services & 项目project
+
+- 服务：就是指容器，例如 微服务模块，redis，mysql 等等
+- 项目：一组关联的容器，也就是一个具体的微服务项目
+
+使用步骤
+
+1. 为每个微服务定义一个 Dockerfile
+2. 编写 `docker-compose.yml` 文件
+3. 通过 Docker Compose 启动项目 
+
+### 安装
+
+```shell
+# 下载
+curl -L https://get.daocloud.io/docker/compose/releases/download/1.25.5/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose
+
+# 授权
+sudo chmod +x /usr/local/bin/docker-compose
+
+# 查看 docker-compose
+[root@VM-0-11-centos springboot-web]# cd /usr/local/bin
+[root@VM-0-11-centos bin]# ll
+total 17176
+-rwxr-xr-x 1 root root 17586312 Jan  4 09:55 docker-compose
+```
+
+### 使用
+
+1. 创建文件夹
+
+   ```shell
+   [root@VM-0-11-centos bin]# mkdir composetest
+   [root@VM-0-11-centos bin]# cd composetest/
+   ```
+
+2. 编写应用 -> 这里以 py 为例
+
+   ```shell
+   [root@VM-0-11-centos composetest]# vim app.py
+   ```
+
+   ```python
+   import time
    
+   import redis
+   from flask import Flask
+   
+   app = Flask(__name__)
+   cache = redis.Redis(host='redis', port=6379)
+   
+   def get_hit_count():
+       retries = 5
+       while True:
+           try:
+               return cache.incr('hits')
+           except redis.exceptions.ConnectionError as exc:
+               if retries == 0:
+                   raise exc
+               retries -= 1
+               time.sleep(0.5)
+   
+   @app.route('/')
+   def hello():
+       count = get_hit_count()
+       return 'Hello World! I have been seen {} times.\n'.format(count)
+   
+   if __name__ == "__main__":
+   	app.run(host="0.0.0.0",debug=True)
+   ```
 
+   ```shell
+   [root@VM-0-11-centos composetest]# vim requirements.txt
+   ```
 
+   ```txt
+   flask
+   redis
+   ```
+
+3. 创建 **Dockerfile** 文件
+
+   ```dockerfile
+   FROM python:3.6-alpine
+   ADD . /code
+   WORKDIR /code
+   RUN pip install -r requirements.txt
+   CMD ["python", "app.py"]
+   ```
+
+4. 创建 **docker-compose.yml**文件
+
+   ```yaml
+   version: '3.3'
+   services:
+     web:
+       build: .
+       ports:
+         - "5000:5000"
+       volumes:
+         - .:/code
+     redis:
+       image: "redis:alpine"
+   ```
+
+5. 通过  `docker-compose` 启动
+
+   ```shell
+   docker-compose up
+   docker-compose build
+   ```
+
+6. 打开另一个终端进行测试
+
+   ```shell
+   [root@VM-0-11-centos ~]# curl localhost:5000
+   Hello World! I have been seen 1 times.
+   [root@VM-0-11-centos ~]# curl localhost:5000
+   Hello World! I have been seen 2 times.
+   [root@VM-0-11-centos ~]# curl localhost:5000
+   Hello World! I have been seen 3 times.
+   ```
+
+7. 停止：Ctrl + C / docker-compose down
+
+### yaml 编写规则
+
+官方文档：https://docs.docker.com/compose/compose-file/compose-file-v3/
+
+主要分为三个部分:
+
+```yaml
+# 指定 docker-compose file 的版本
+version: ""
+# 配置服务
+services::
+	服务1: 
+		...
+    服务2:
+    	...
+    服务3:
+    	...
+# 其他配置(不怎么重要)
+configs:
+networks:
+```
+
+这里如果去一个个学习各种配置指令的话学习成本太高了，所以多敲就好了，没必要特意去看，平时可以翻翻文档或者多看开源项目的配置记好了
+
+### 实战：一键部署 WP
+
+1. 创建文件夹
+
+   ```shell
+   mkdir /wp
+   cd /wp
+   ```
+
+2. 编写 `docker-compose.yml` 文件
+
+   ```yaml
+   # 使用的版本
+   version: "3.3"
+   
+   # 配置服务
+   services:
+     # 数据库
+     db:
+     	# 使用的镜像
+       image: mysql:5.7
+       # 挂载
+       volumes:
+         - db_data:/var/lib/mysql
+       # 自动启动
+       restart: always
+       # 环境变量
+       environment:
+         MYSQL_ROOT_PASSWORD: somewordpress
+         MYSQL_DATABASE: wordpress
+         MYSQL_USER: wordpress
+         MYSQL_PASSWORD: wordpress
+       
+     wordpress:
+       # 该容器依赖的其他容器，只有启动了其他容器才会启动该容器
+       depends_on:
+         - db
+       # 使用的镜像
+       image: wordpress:latest
+       volumes:
+         - wordpress_data:/var/www/html
+       # 端口映射
+       ports:
+         - "8000:80"
+       restart: always
+       environment:
+         WORDPRESS_DB_HOST: db
+         WORDPRESS_DB_USER: wordpress
+         WORDPRESS_DB_PASSWORD: wordpress
+         WORDPRESS_DB_NAME: wordpress
+   # 挂载配置
+   volumes:
+     db_data: {}
+     wordpress_data: {}
+   ```
+
+3. 后台启动
+
+   ```shell
+   docker-compose up -d
+   ```
+
+4. 访问测试
+
+   ![image-20220104110558527](README.assets/image-20220104110558527.png)
+
+### 实战 - 部署微服务项目
+
+1.  创建应用 - 使用 SpringBoot + Redis 做一个计数器即可
+
+   编写 `application.yml`
+
+   ```yaml
+   server.port=8080
+   # redis的host地址不使用 ip 而是使用一会部署的 redis 容器
+   spring.redis.host=redis
+   ```
+
+2. 编写 `Dockerfile`
+
+   ```dockerfi
+   FROM java:8
+   
+   COPY *.jar /app.jar
+   
+   CMD ["--server.port=8080"]
+   
+   EXPOSE 8080
+   
+   ENTRYPOINT ["java","--jar","/app.jar"]
+   ```
+
+3. 编写 `docker-compose.yml`文件
+
+   ```yaml
+   version: "3.3"
+   services:
+      # 构建自己的镜像
+      webapp:
+        build: .
+        # 自己的镜像名
+        image: webapp-image
+        # 依赖的容器
+        depends_on:
+          - redis
+        # 端口映射
+        ports:
+          - "8080:8080"
+      # redis 容器
+      redis:
+        image: 'redis:alpine'
+   ```
+
+4. 在服务器上新建文件夹
+
+   ```shell
+   mkdir webapp
+   cd webapp
+   ```
+
+5. 将项目打包后，分别将 jar + dockerfile + docker-compse.yaml 文件上传到服务器
+
+   ![image-20220104150701790](README.assets/image-20220104150701790.png)
+
+6. 通过 `docker-compose`启动
+
+   ```shell
+   docker-compose up -d
+   docker-compose up --build
+   ```
+
+7. 测试
+
+   ```shell
+   [root@VM-0-11-centos ~]# curl localhost:8080/getCache
+   test docker compose:1
+   [root@VM-0-11-centos ~]# curl localhost:8080/getCache
+   test docker compose:2
+   ```
+
+   
 
